@@ -6,9 +6,30 @@ const MongoClient = require('mongodb').MongoClient;
 const assert = require('assert');
 var config = require('config');
 var Stopwatch = require("statman-stopwatch");
-var moment = require('moment')
+var moment = require('moment');
+const { query } = require('express');
 
 app.use(bodyParser.json());
+
+var myMongoClient = (function() {
+  var key = null;
+  return function(url) {
+    var parser = require('url-parse');
+    var query = parser(url, parser=true).query;
+    if (query.authMechanism == 'MONGODB-X509' && query.sslClientCertificateKeyFile != undefined) {
+      if (key == null) {
+          var fs = require('fs');
+          key = fs.readFileSync(query.sslClientCertificateKeyFile);
+      }
+      return new MongoClient(url, {
+        sslCert: key,
+        sslKey: key
+      });
+    } else {
+      return new MongoClient(url);
+    }
+  }
+})();
 
 // Called by test
 app.all('/', function(req, res, next) 
@@ -16,7 +37,7 @@ app.all('/', function(req, res, next)
   logRequest(req.body, "/")
   setCORSHeaders(res);
 
-  MongoClient.connect(req.body.db.url, function(err, client)
+  myMongoClient(req.body.db.url).connect(function(err, client)
   {
     if ( err != null )
     {
@@ -288,7 +309,7 @@ function parseQuery(query, substitutions)
 
 function runAggregateQuery( requestId, queryId, body, queryArgs, res, next )
 {
-  MongoClient.connect(body.db.url, function(err, client) 
+  myMongoClient(body.db.url).connect(function(err, client) 
   {
     if ( err != null )
     {
@@ -427,7 +448,7 @@ function doTemplateQuery(requestId, queryArgs, db, res, next)
     const dbName = db.db
     
     // Use connect method to connect to the server
-    MongoClient.connect(db.url, function(err, client) 
+    myMongoClient(db.url).connect(function(err, client) 
     {
       if ( err != null )
       {
